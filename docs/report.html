@@ -1,0 +1,406 @@
+<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Status Report</title><style>
+:root{--bg:#131110;--surface:#1d1917;--line:#332c27;--text:#e8e2dc;--muted:#9a908a;
+      --copper:#c98a4b;--copper-dim:#8a5a2e;--meter:#6fbf73}
+body{font:16px/1.6 system-ui;background:var(--bg);color:var(--text);max-width:1080px;
+     margin:0 auto;padding:28px 22px 90px}
+h1{font-size:30px;font-weight:650;letter-spacing:-0.015em;line-height:1.2;color:var(--text);
+   text-wrap:balance;border-bottom:2px solid var(--copper-dim);padding-bottom:12px}
+h2{font-size:13px;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;
+   color:var(--copper);margin:34px 0 10px}
+h3{font-size:17px;font-weight:650;color:var(--text);line-height:1.3}
+a{color:var(--copper);text-decoration-color:var(--copper-dim)}
+a:hover{color:#e0a763} a:focus-visible{outline:2px solid var(--copper);outline-offset:2px}
+table{border-collapse:collapse;margin:14px 0;font-size:14px;display:block;overflow-x:auto;
+      font-variant-numeric:tabular-nums}
+th,td{border:1px solid var(--line);padding:5px 10px;text-align:left}
+th{background:var(--surface)} tr:nth-child(even){background:#181513}
+code{background:#241f1b;padding:1px 5px;border-radius:4px;font-size:14px}
+pre{background:#1a1613;padding:12px;border-radius:8px;overflow-x:auto;border:1px solid var(--line)}
+img{max-width:100%;border-radius:6px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+      padding:16px 18px;margin:10px 0}
+.card h3{margin:0 0 6px} .card p{margin:4px 0;color:var(--muted);font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.tag{display:inline-block;border:1px solid var(--line);background:#241f1b;border-radius:4px;
+     padding:1px 8px;margin:1px 3px;font-size:12px;font-weight:600;letter-spacing:0.02em}
+.tag.m{color:var(--meter);border-color:#2c4a2e}
+.lede{color:var(--muted);font-size:16.5px;max-width:68ch}
+.status{border-left:3px solid var(--copper);padding:12px 16px;background:var(--surface);
+        border-radius:0 8px 8px 0;margin:18px 0}
+.status p{margin:4px 0;font-size:15px}
+</style></head><body><a href="index.html" style="position:fixed;top:8px;right:12px;z-index:1000;
+background:#8a5a2e;color:#f4ead9;padding:6px 14px;border-radius:7px;text-decoration:none;
+font:600 13px system-ui;letter-spacing:0.04em;box-shadow:0 2px 8px #0009">HOME</a><h1>SQ003-H Reverse Engineering &amp; Diagnosis — Status Report</h1>
+<p>2026-07-25 · Claude Code session · repo: <code>Dally_range_debug/</code></p>
+<p>This report supersedes the fault-tree and plan sections of <code>SQ003_PROJECT_HANDOFF.md</code>.
+It was produced with an adversarial loop: every stage was red-teamed by OpenAI Codex
+(approach, code, conclusions), independent research and verification subagents, and a
+second Claude Code observer session (<code>OBSERVER_NOTES.md</code>). Methodology first; numbers after.</p>
+<hr />
+<h2>1. What was done (methodology)</h2>
+<p><strong>Inputs.</strong> 17 photos. The decisive ones postdate the handoff: IMG_1088 (copper side,
+straight-on, marker ink cleaned — the CV keeper), IMG_1089/1086/1087 (component side,
+straight-on, readable silkscreen). Owner DMM results seeded <code>measurements.yaml</code> (ground
+truth, append-only).</p>
+<p><strong>Pipeline</strong> (<code>pipeline/</code>, all runnable end-to-end):
+<code>segment</code> (illumination-normalized copper/metal/ink masks) → <code>pads</code> (anchor detection:
+curated terminals, DIP-grid synthesis, px/mm scale from the DIP pitch) → <code>checks</code>
+(physical invariants; the build refuses to continue on violation) → <code>nets</code> (connected
+components + anchor stamping + measurement contracts) → <code>register</code> (component→copper
+homography, RMS 0.83 mm over 18 correspondences) → <code>links</code> (merge layer: wire links [V] +
+measurements [M] over copper [CV], with post-merge ground-truth assertions) → <code>viewer</code>
+(self-contained HTML net explorer, confidence-colored).</p>
+<p><strong>Provenance discipline.</strong> [M] meter &gt; [V] visual &gt; [CV] computational. Two rules paid off
+immediately: (a) the pipeline independently <em>reproduced</em> the chat session's P2/P3 false
+merge (dome shadow-rings bridging adjacent diode pads) and measurement M010 caught it —
+the fix (shadow-ring subtraction) is now part of segmentation; (b) a netlist that
+contradicts any measurement aborts the build rather than saving.</p>
+<p><strong>Red-team loop.</strong> Codex red-teamed the approach (12 findings; the fault tree below is
+reshaped by them), the code (3 findings, all fixed: no silent DIP-row synthesis, blocking
+measurement contracts, scale-derived thresholds), and — together with a verification
+subagent — the conclusions. A research subagent fact-checked hardware claims against
+primary datasheets and appliance-service sources.</p>
+<h2>2. Netlist state (deliverables)</h2>
+<ul>
+<li><code>out/netlist.json</code> — 924 electrical nets; every pad anchor → net; labels, provenance
+  set, confidence, ink-doubt flag per net. <code>out/sq003_net_explorer.html</code> — interactive
+  explorer on the merged data (hover/click, P1–P15 jump buttons, confidence coloring).</li>
+<li><strong>Terminal order: P1 at top of IMG_1088</strong>, resolved by testing both order hypotheses
+  against net geometry — the board-spanning LINE net (≈510 mm² of copper) lands on
+  terminal 7-from-top, which is P7 only in the P1-top hypothesis; consistent with the
+  component-side silkscreen read and cover label. (Independent visual verification of
+  this and the items below ran as a separate adversarial pass; see §8.)</li>
+<li><strong>IC1 pins 1–20 each sit on a distinct, probe-able net</strong> (the handoff's "20
+  highest-value nets"). Pin 1 ≡ P5 (LINE-5V rail): supported by measurement M003 plus
+  photographic notch evidence — but M003's probe placement itself assumed the
+  orientation, so treat as <em>visually supported, pending the Q8 beeps</em> rather than
+  settled. The full pin→function map needs the 20-beep session (below).</li>
+<li><strong>All 14 wire links LK1–LK14 + the black factory jumper were found and cataloged
+  [V]</strong>, mapped through registration (RMS 0.83 mm). Each endpoint snap records its
+  distance-to-copper, majority share, and runner-up net; a link merges only if both
+  ends snap unambiguously. Result: <strong>14 of 15 merged</strong> (e.g. LK3+LK14 extend LINE across
+  the board); <strong>LK2 is withheld</strong> — its pin-20-zone endpoint splits 52/48 between two
+  nets, so it is reported unresolved instead of guessed (one beep closes it).</li>
+<li>Known limits: a visually-cataloged link that snapped cleanly can still be wrong —
+  [V] merges are falsifiable by the 20-beep session, and only P2/P3 has a meter-backed
+  non-continuity guard today; nets are copper-level (component pins other than
+  IC1/terminals not yet bound); the P5→IC1.1 rail path is electrically verified [M]
+  but its copper chain runs P5-copper → (joint) → LK1/LK5 rail cluster → (joint) →
+  pin-1 stub, and CV cannot see through those two link-pad joints — exactly the joints
+  the flex test targets; ink-flagged nets carry reduced confidence by design.</li>
+</ul>
+<h2>3. Errata found in the handoff (recorded, corrected)</h2>
+<ol>
+<li><strong>Terminal pitch is not "even ~9.4 mm."</strong> Measured gaps 6.6–11.2 mm with real group
+   breaks after P3 and P9 — cross-validated independently on both photo sides. Every
+   periodic-comb fit was structurally doomed; terminal anchors are now visually curated
+   (<code>curated_anchors.yaml</code>).</li>
+<li><strong>MCU part number</strong>: ST62T20<strong>CB</strong>3 (B = PDIP20; the "3" is the −40…+125 °C temp
+   grade, not a ROM revision).</li>
+<li><strong>Relay coil spec</strong> is 6.4 kΩ ±10 % (AZ943 datasheet), not ≈6.5 k. Measured 6.2 kΩ
+   remains healthy.</li>
+<li>IC1 pin-1 orientation: the handoff's text-direction assumption is now supported by
+   photographic evidence (molded notch at the board-interior end; the blue dot on the
+   other end is a QC mark). Q8 beeps still recommended as the definitive check.</li>
+<li>Terminal anchor x-positions in the first curated read sat on the dome rims (~2 mm
+   left of center); corrected after the adversarial verification pass. No netlist
+   impact (each dome pair shares one copper bar), recorded for methodology honesty.</li>
+</ol>
+<h2>4. Diagnosis — updated fault tree</h2>
+<p><strong>What the symptom really localizes.</strong> Both XLO burners dead (no spark, no gas), all
+other burners fine, second occurrence in ~2 years. This localizes to <em>shared XLO
+infrastructure</em>, which is bigger than the board's PSU: pot excitation (P5) distribution,
+the pot/harness connectors, the relay-gated SW LINE path, solenoid returns, the board's
+MCU/PSU — and only field data narrows it: appliance techs report this exact
+both-burners-together failure as the classic simmer-board death, with the knob pots as a
+known co-failure. So the board remains suspect #1, but the range-side paths must be
+cleared cheaply before any board surgery is trusted.</p>
+<p><strong>Revised ranking</strong> (was: PSU → reset → osc → request path → link joint → MCU):</p>
+<ol>
+<li><strong>Board fails the bench functional test</strong> (see §5). This is the highest-value single
+   test, <em>not</em> an infallible world-splitter: a bench PASS with an unrealistic stimulus
+   or load can miss a fault that only appears with real harness/solenoid/spark-module
+   interaction or at cooktop temperature; a bench FAIL is only meaningful if the
+   stimulus wiring is right (per the service-manual hookup). Interpret with those
+   false-pass/false-fail modes in mind: pass ⇒ <em>shift</em> suspicion range-side
+   (pots/harness/connectors — the documented co-failure); fail with clean rails ⇒
+   board fault, continue down this list.</li>
+<li><strong>5 V rail integrity under load</strong> — the SERIES dropper is <strong>C12</strong> per the v3
+   netlist (NEUT → C12 → R10 390R → rail); <strong>C7 is the X2 line filter across
+   LINE↔NEUT</strong> — its aging does not sag the rail. Dropper caps age; but a DMM average of
+   5 V is NOT sufficient: check AC ripple on VDD and reset-pin stability (brown-out /
+   watchdog cycling can look like "5 V but dead").</li>
+<li><strong>Relay path under load</strong> — coil resistance cleared the coil only. Contacts (P7→P4
+   SW LINE) can be burned/high-resistance; test closure and voltage drop while driving a
+   real load.</li>
+<li><strong>Solder joints / prior rework</strong> — NEW: IMG_1089 shows a solder lump on P10's base
+   and a flux halo at P11 (the solenoid returns) — evidence this board was hand-reworked
+   before. Inspect/reflow those and the link joints (single-sided phenolic + 24/7 heat =
+   joint fatigue); do the P5-chain flex test from the handoff.</li>
+<li><strong>Request-sense path</strong> — 4N35 LED (unpowered diode test, expect ~1.0–1.2 V across
+   pins 1–2), D17–D20, dropping resistors.</li>
+<li><strong>ZD4</strong> — <em>not fully exonerated</em> (red-team): a 2.5 V reverse reading through
+   surrounding circuitry is consistent with a reference but also with leakage. One
+   powered measurement across it settles it. Keep on the list, below the above.</li>
+<li><strong>Oscillator</strong> (RES1 + load caps; note the LFAO backup only masks a dead resonator if
+   the OSG option bit is programmed — unknown for this firmware).</li>
+<li><strong>MCU dead</strong> — last resort; OTP read-protected ⇒ donor board. (For completeness:
+   ST62 protection is defeatable by specialist labs, not by DIY.)</li>
+</ol>
+<p><strong>Why "~2-year life ⇒ overstressed shunt PSU" was demoted:</strong> plausible, but unproven and
+it under-weights external stressors (relay arcing, marginal solenoid load, heat-cycled
+joints, line surges, or simply a refurb board with same-age parts). If an external load
+is killing boards, uprating PSU parts won't prevent failure #3 — so the repair should
+include the §6 hardening <em>and</em> the range-side checks regardless of root cause.</p>
+<h2>5. Owner bench checklist (ranked by information per minute)</h2>
+<p>Sequencing rationale: the board is currently OUT of the range on the bench, so board
+checks come first <em>as a practical matter</em> — but the range-side checks in step 5 are the
+other half of the diagnosis and should happen on the next visit to the range,
+<strong>before buying any parts</strong>, whichever order the visits happen in.</p>
+<p>Unpowered (do first, 20 min total):
+1. <strong>Q8 orientation beeps</strong>: IC1 pin 6→pin 20 ≈0 Ω and pin 20→P6-side common ≈0 Ω
+   (locks pin numbering; everything downstream depends on it).
+2. <strong>4N35 LED</strong>: diode test across IC3 pins 1–2, expect ~1.0–1.2 V (its LED is the
+   request-sense front end).
+3. <strong>IC1 20-beep session</strong> (~15 min): COM = pin 20; beep every IC1 pin vs P5, P14, P15,
+   RES1 legs, 4N35 pins 4/5, relay coil pads, T1/T2 gate pins, TR bases. Priorities
+   inside the session (verification findings): (a) adjacent-pin beeps along pins 16–20 —
+   that row is one fused blob in the copper imagery, so their separation is currently
+   model-assumed, and pins 16–19 are the PA triac-drive outputs; (b) the two ends of
+   link LK2 (just below pin 20 — its snap was ambiguous); (c) P2 and P3 each to their
+   own diode pad in the D17/18/19 cluster (glare seams broke those runs in CV — two
+   beeps bind them). Record in <code>measurements.yaml</code> — this + the netlist completes the
+   logic map and falsifies/confirms every [V] link merge.
+4. <strong>Inspect P10/P11 joints</strong> (rework evidence) + flex test the P5 link chain (the two
+   link-pad joints in the P5→pin-1 rail chain are exactly what CV cannot vouch for).
+5. At the range (next visit, before parts are ordered): XLO solenoid coils ≈1.7 kΩ and
+   insulation to chassis; pot switch action + wiper sweep on both XLO pots; harness
+   continuity terminal-to-terminal; connector pins clean and tight.</p>
+<p>Powered bench (highest-value functional test; safety rules below):
+6. VDD (IC1 pin 1↔20): 5 V <strong>and</strong> low AC ripple; pin 7 ≈VDD steady (no reset cycling);
+   pins 3/4 oscillating.
+7. <strong>Functional injection test</strong>: replicate one XLO position per the service-manual
+   hookup — 10 kΩ pot from P5 to P14 <em>and</em> the pot's spark-switch contact wired as the
+   harness does (the exact request node is open item Q2/Q4 — follow the PDR36/PRG
+   wiring diagram rather than guessing); load P9–P10 with a real XLO solenoid or an
+   equivalent ~1.7 kΩ/10 W dummy. Watch pins 16–19 switch and the solenoid clunk/cycle
+   (~50 VAC-class drive). Interpret per §4.1 (false-pass/false-fail modes).
+8. Relay contact drop P7→P4 while driving a real load.</p>
+<p><strong>Safety (upgraded per red-team):</strong> these are line-referenced circuits — P5/P14/VDD are
+NOT safe low voltage despite the "5 V" name. Isolation transformer <em>and</em> a
+fused/current-limited feed; one-hand rule; every fixture (pot, switch, dummy load)
+insulated, enclosed, and pre-wired — no touching anything while energized; NO grounded
+scope on line-referenced nodes (battery/diff-probe only); discharge <strong>all</strong> energy
+storage (the 2.2 µF/400 V red cap through ~1 kΩ, plus the electrolytics) after every
+power-down. This is a gas-appliance ignition controller: after reinstall, verify no gas
+smell at idle, clean ignition, and stable XLO cycling before leaving it in service.</p>
+<h2>6. Repair &amp; hardening (when the culprit is found)</h2>
+<ul>
+<li>Replace 1999-vintage electrolytics as a set with <strong>105 °C low-ESR</strong> parts; uprate any
+  failed zener to ≥1 W; check R32 for thermal stress; reflow suspect link/terminal
+  joints; re-coat disturbed conformal areas.</li>
+<li><strong>Line-side aging parts</strong> (red-team addition — these are the parts the fault tree
+  actually points at): if the SERIES dropper <strong>C12</strong> measures low, replace with
+  <strong>safety-rated X2 film caps of the same value and class</strong> (capacitance loss here IS
+  the classic transformerless-supply death); inspect/replace the MOV (V1) if surge
+  history is suspected; if relay contacts show drop under load, replace K1 (AZ943 is
+  current production, cheap); any burned resistor gets a flameproof like-for-like;
+  clean and respect creepage distances when reworking.</li>
+<li>Whole-range surge protector = cheap insurance either way.</li>
+<li><strong>Parallel path</strong>: FixYourBoard repairs this exact board (~$150, 2-yr warranty, root
+  cause report); UpFix lists it too; used boards $50–480 (beware HA/HB pot-compatibility
+  and same-age refurbs). Keep this board as donor/testbed if a used one goes in.</li>
+</ul>
+<h2>7. Open questions register (updated)</h2>
+<ul>
+<li>Q1 (relay NO vs NC), Q2 (SCR/2.2 µF CD stage load), Q3 (T1/T2 triac vs BJT),
+  Q4 (P10/P11 RET topology), Q5 (C10/C11 role), Q6 (RA/RB/RC — likely unpopulated option
+  pads per the visual catalog), Q7 (ZD4 anode net) — all unchanged, now answerable
+  faster with the netlist + viewer.</li>
+<li>Q8 (IC1 orientation): photographic evidence in; beep confirmation pending.</li>
+<li>NEW Q9: were P10/P11 joints factory or field rework, and are they sound?</li>
+</ul>
+<h2>8. Red-team log (what was challenged and what changed)</h2>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Key findings</th>
+<th>Action taken</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Codex (approach)</td>
+<td>both-XLO localization is broader than the board; injection test is the discriminator; ZD4 exonerated too early; DMM-average 5 V insufficient; safety gaps</td>
+<td>fault tree rewritten (§4), checklist reordered (§5), safety upgraded</td>
+</tr>
+<tr>
+<td>Codex (code)</td>
+<td>silent DIP-row synthesis; netlist saved despite ground-truth violation; pixel thresholds not scale-derived</td>
+<td>all three fixed; build now fails loudly</td>
+</tr>
+<tr>
+<td>Observer session</td>
+<td>terminal detector returned artifacts; DIP row discarded by all-or-nothing gap test; Hough pads excluded; dedupe gaps; ink mask meaningless</td>
+<td>all five fixed; invariant <code>checks.py</code> added</td>
+</tr>
+<tr>
+<td>Research subagent</td>
+<td>ST62 pinout/ADC/LVD/OSG confirmed; part number &amp; relay-spec corrections; field failure reports; repair-service pricing</td>
+<td>errata recorded (§3); field context into §4</td>
+</tr>
+<tr>
+<td>Codex (conclusions)</td>
+<td>IC1-pin-1/P5 and injection-test claims overstated; link snaps lacked ambiguity reporting; checklist ordering conflict; hardening missed line-side parts</td>
+<td>claims downgraded (§2, §4); snap diagnostics added (LK2 correctly un-merged as ambiguous); checklist + hardening rewritten (§5, §6)</td>
+</tr>
+<tr>
+<td>Verification subagent (adversarial, vs raw imagery)</td>
+<td><strong>CONFIRMED</strong>: terminal order (silkscreen read + mirror-homography argument independent of the pipeline's own resolver + fattest-net check on a re-derived mask), IC1 pin-1 mapping (26 px, with RES1-over-pins-3/4 as electrical corroboration), all 7 sampled link snaps, and the P2/P3 shadow cuts (gaps are substrate, not copper). <strong>REFUTED (low)</strong>: curated x_posts sat ~2 mm left of dome centers — corrected, pipeline rerun, conclusions unchanged. <strong>NEW</strong>: IC1 pins 16–20 are one fused blob in the mask (separation is model-imposed) → confidence capped low + beep priority; P2/P3 terminal→diode-pad runs under-merged by glare seams → two beeps added to checklist; LK2 deferral judged over-conservative visually but kept (a beep closes it).</td>
+<td>anchors corrected; confidences capped; checklist updated</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>9. Overnight session additions (2026-07-26)</h2>
+<p><strong>Owner stroke session ingested.</strong> 136 hand-drawn connectivity strokes (125 connect,
+11 barrier) entered the netlist as the [H] evidence layer. Safety machinery that made
+this trustworthy, added tonight: evidence-logged unions (every merge traceable to its
+stroke/link/measurement), <code>physics_constraints.yaml</code> (six impossible-pair assertions),
+a dwell rule so freehand strokes union only nets they travel along (arclength-resampled;
+82→74 graze contacts dropped), and a documented quarantine mechanism — exactly one
+stroke (#32) needed quarantining after the physics layer caught it forming a
+LINE↔NEUTRAL chain and the evidence log named it.</p>
+<p><strong>Topology findings (netlist-supported, meter confirmation pending):</strong>
+- <strong>P5 ≡ P6 ≡ IC1 pin 1 (VDD)</strong> — the supply looks neutral-referenced with VSS 5 V
+  below neutral (classic transformerless appliance topology). Test + falsifiers =
+  BENCH_GUIDE A3/A3b. Every "5 V" point remains line-referenced for safety purposes.
+  <em>Second adjudication pass:</em> pin-binding physics caught that two further strokes
+  (#8/#9) had also folded D12's cathode node into this net — which would have made
+  D12 a LINE→NEUT short. Quarantining them left P5≡P6 standing on stroke-independent
+  link evidence (LK1→LK5) and resolved D12 into a proper rectifier feeding a distinct
+  rectified node: LINE →D12→ rect node → (shunt/reservoir, parts under the red cap)
+  → VSS, with VDD=NEUT distributed via the wire links. Three quarantines total, each
+  documented with its evidence chain in annotations/quarantine.yaml.
+- <strong>P10 ≡ P11 — WITHDRAWN 2026-07-28</strong>: owner audit of the net render showed disjoint
+  islands; the union was a terminal sampling-disk artifact (majority-only unions now).
+  Q4 stays open; bench A12 decides.
+- The 243 mm² unlabeled pour carrying IC1 pin 20 = the VSS plane.</p>
+<p><strong>New artifacts:</strong>
+- <code>DESIGN_NOTES.md</code> — reference-design exercise (how E.G.O. plausibly built this),
+  block-by-block, with BOM reconciliation (the design closes: every observed part is
+  explained, nothing required is missing), 11 beep-testable predictions DP1–DP11, and
+  a ranked FMEA. Headline: the <em>supply-collapse-under-load class</em> is the only
+  mechanism family found matching all three observed facts (both XLO dead together,
+  rest working, ~2-year repeat).
+- <code>pipeline/psu_model.py</code> — quantitative dropper-supply budget: worst-case active
+  load ≈25 mA implies a bridge rectifier or a split relay branch (R32's 2 W rating
+  supports the split); dimensionless aging law: rail fails at h/(1+h) fractional
+  capacitance loss for design headroom h (23% loss kills a 30%-headroom design).
+- <code>BENCH_GUIDE.md</code> + <code>out/probe_map.jpg</code> — printable bench protocol (A1–A20 unpowered
+  with an explicit orientation gate and falsifier beeps; B1–B8 powered with
+  multi-cause interpretations), keyed to a numbered probe-point photo.
+- <code>pipeline/bind.py</code> + <code>pipeline/export.py</code> — component-pin binding now LIVE:
+  a subagent cataloged 118 lead-end positions on 77 components (lead_ends.yaml, [V],
+  honest found:false for the 28 hidden under bodies); 92 pins bound onto nets with
+  per-pin share/distance diagnostics; out/schematic.svg + out/netlist_pins.md emit
+  the first real schematic draft. The steering-diode matrix decoded symmetrically
+  (D15/D13/D16/D14 ch1 ↔ D9/D10/D5/D6 ch2 tying SOLN/SEQ/RET exactly as predicted),
+  freewheel diodes return to VDD/NEUT, ZD2 sits on the VDD net, R32+D12 hang off
+  LINE. K1/C3/C14/D1/D2/C7/C12/V1 pins remain unbound (hidden) — copper-side beeps
+  or component removal will close them.</p>
+<p><strong>Red-team log additions:</strong> codex reviewed the design notes, PSU model, bench guide,
+and dwell rule (10 findings): claims downgraded to hypothesis grade with explicit
+falsifiers, B-step interpretations made multi-cause, the dwell rule's
+point-index-vs-arclength bug fixed, and the PSU formula's return-diode assumption
+made explicit. All applied.</p>
+<h2>10. Segmentation v2 adopted (2026-07-28, three red-team rounds)</h2>
+<p>The CV rewrite (multi-photo fusion + classifier trained on the owner's verified strokes
++ contract-aware carving) is live after three adversarial rounds — each failure caught by
+the physics-constraint layer and each catch hardened permanently (VDD↔VSS pair, 20
+LINE-vs-MCU-pin pairs, ≤6-IC1-pins-per-net cap, eval-by-running-the-real-pipeline).
+Result: 913 → 73 electrical nets, 122/122 owner strokes realized by copper alone
+(61 → 1 stroke merges needed), 96 component pins bound. Notable deltas: LK2 now applies
+(its 52/48 ambiguity was a threshold accident; the dome↔trace join is bright in both
+lightings — solder-bridge/junction beep candidate given the suspected prior rework);
+LK3 drops to unresolved; <strong>P5↔P6 is no longer copper-merged, making bench beep A3 the
+genuine arbiter of the neutral-referenced-supply hypothesis</strong>; IC1 pins 5/8/15/20 share
+a 2470 mm² pour (plausible VSS strapping, LOW confidence — top of the beep list).
+The carver's "bright-in-both-photos" refusals are enumerated in SEGMENT_V2_NOTES.md as
+targeted beep candidates.</p>
+<h2>11. SEGMENT v3 adopted (2026-07-30): element-graph netlist + adjudication</h2>
+<p>Full rebuild of the vision system (SEGMENT_V3_PLAN.md, SEGMENT_V3_NOTES.md;
+research/R1-R5 red-team reports). The board is now an ELEMENT GRAPH — every
+solder joint an atomic dome node (census over all 4 back photos; cross-view
+variance as the metal detector), flat copper as corridor elements, and
+connectivity decided by targeted physical tests: the per-ray ANNULUS test
+(what leaves each joint: exit / clearance / lead-tail / dome-ward),
+explicit dome-pair BRIDGE tests, and an ensemble in which the owner-audited
+v2 mask provides recall votes and precision vetoes. Owner barriers pre-cut
+the corridor space ([H] outranks CV inside the graph too). Rendered mask =
+graph connectivity by construction; the unchanged nets→links→contract
+pipeline runs green on it.</p>
+<p>Every v2/v3 disagreement (26 initially, 12 after the ensemble) was
+adjudicated from multi-view photo evidence (research/eval_v3_verdicts.yaml,
+140 evidence crops): verdicts feed v3_overrides.yaml (7 forced connections,
+2 forced disconnections, 4 owner barriers excluded where their bands cross
+pads that are genuinely connected — the strokes were drawn against v2's fat
+mask). Remaining deltas vs the round-4 baseline: TWO, both understood
+(v2 erratum ZD6.2↔pad192 — clean clearance in all views; and the R19.2
+group merging through the LK3 WIRE, which now resolves and applies).</p>
+<p><strong>New facts established (all [V] photo-evidence unless noted):</strong>
+- <strong>K1 relay fully pinned (answers Q1): P4 is the NO contact</strong>; COM = P7
+  (LINE, consistent with M005), NC = factory-unused isolated pad, coil pins
+  identified. The coil-rail STORY (diode-OR → R32 dropper → C15 smoothing →
+  coil → NEUT, D12 freewheel — which would explain the 48 VDC coil variant)
+  is a HYPOTHESIS: two of its joints dead-end in the current netlist —
+  the beep list carries the four continuity checks that settle it.
+- IC1 VPP (pin 6) appears tied to VSS (pin 20) <strong>optically</strong> — matches the
+  Q8 expectation; bench A1 remains the confirming gate (do not treat as
+  measured until it beeps).
+- <strong>C17 and C18 are UNPOPULATED factory options</strong> (bare wave-soldered
+  pads); another unpopulated option pad sits under the red cap.
+- <strong>Suspected solder bridge: D9.1 ↔ D238 at (1076,3034)</strong> — bright
+  metal-continuous saddle; beep list item #1 (a real fault candidate).
+- R23.1 ↔ pour: optically unresolvable (the decisive strip is occluded by
+  R23's own clinched lead tail in every view) — beep required; the netlist
+  keeps them separate pending the meter.
+- Pin binding: <strong>162 pins on 73 components</strong> (was 95/48), IC1 and K1
+  complete; BOM 37/101 valued with per-reading photo evidence
+  (research/bom_evidence/); TR8 catalogued (absent from the original BOM);
+  D4/C9 probably unpopulated.</p>
+<p>The ranked owner beep list (see the generated file for the current count;
+only netlist-changing questions) is
+research/BEEP_LIST_V3.md / out/beep_list_v3.json. Highest-value future data:
+BACKLIT photos of the bare board (copper is opaque, laminate transmits —
+near-binary trace truth; research/R1 top recommendation).</p>
+<h3>§11b — ST62T20C datasheet deep-dive (2026-07-30, research/MCU_USAGE_NOTES.md)</h3>
+<p>Documentation-verified facts (DS Rev 4 + AN392, PDFs archived in
+research/datasheets/):
+- <strong>Pin map confirmed exact</strong> (pins 8–15 = PB7→PB0, 16–19 = PA3→PA0, ADC on
+  port B only, 20 mA sink on port A only). No net relabeling needed.
+- <strong>Every reset parks all I/O as inputs with ~45 µA pull-ups</strong> — triac gates
+  cannot fire and spark windows shut. ANY reset-parked MCU reproduces the
+  exact both-XLO-dead-everything-else-fine symptom. The reset CAUSE is
+  bench-classifiable at pin 7: static low = LVD/brown-out; 0.4–25 ms
+  sawtooth = watchdog reset loop; solid high = MCU running (fault is
+  elsewhere: inputs/firmware/outputs).
+- <strong>Clock spec headroom</strong>: the −40/+125 °C grade is rated 8 MHz only at
+  VDD ≥ 4.5 V — a 5 V dropper rail sagging 10 % is already out of spec.
+  (Owner ask: read RES1's printed frequency; 4 MHz would triple the margin.)
+- <strong>OTP retention is the sleeper suspect</strong>: spec-minimum retention is 10 yr
+  at 55 °C but falls to ~1–3 yr at 70–90 °C junction (DS Fig 55 class
+  curve). In a hot range enclosure, spec-minimum bit-fade OVERLAPS the
+  observed ~2-year failure cadence. The fault tree's "MCU dead = last
+  resort" ranking is hereby PROMOTED to a co-equal branch: diagnosed by
+  exclusion (pin 7 high + rail good + inputs good + no drive), remedied
+  only by donor board + thermal relocation.
+- <strong>Rail-referencing contradiction exposed</strong>: AN392's transformerless-drive
+  topology puts the MCU domain LINE-referenced (5 V referred to triac MT1),
+  which conflicts with PB0 (pin 15) sitting directly on the P6/NEUT net if
+  C12 is the series dropper. Three discriminating beeps added to the beep
+  list (A3 P5&lt;-&gt;P6; pin15&lt;-&gt;P6; the N84 cluster &lt;-&gt; pin 20). Also new
+  spec-grounded "MCU alive but refusing to fire" mechanisms: ADC source
+  impedance &lt;=10 kOhm and ripple limits — WORN POTS now have a concrete
+  mechanism to silently suppress XLO.</p></body></html>

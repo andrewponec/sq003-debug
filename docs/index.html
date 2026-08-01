@@ -1,0 +1,84 @@
+<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>SQ003 debug workspace</title><style>
+:root{--bg:#131110;--surface:#1d1917;--line:#332c27;--text:#e8e2dc;--muted:#9a908a;
+      --copper:#c98a4b;--copper-dim:#8a5a2e;--meter:#6fbf73}
+body{font:16px/1.6 system-ui;background:var(--bg);color:var(--text);max-width:1080px;
+     margin:0 auto;padding:28px 22px 90px}
+h1{font-size:30px;font-weight:650;letter-spacing:-0.015em;line-height:1.2;color:var(--text);
+   text-wrap:balance;border-bottom:2px solid var(--copper-dim);padding-bottom:12px}
+h2{font-size:13px;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;
+   color:var(--copper);margin:34px 0 10px}
+h3{font-size:17px;font-weight:650;color:var(--text);line-height:1.3}
+a{color:var(--copper);text-decoration-color:var(--copper-dim)}
+a:hover{color:#e0a763} a:focus-visible{outline:2px solid var(--copper);outline-offset:2px}
+table{border-collapse:collapse;margin:14px 0;font-size:14px;display:block;overflow-x:auto;
+      font-variant-numeric:tabular-nums}
+th,td{border:1px solid var(--line);padding:5px 10px;text-align:left}
+th{background:var(--surface)} tr:nth-child(even){background:#181513}
+code{background:#241f1b;padding:1px 5px;border-radius:4px;font-size:14px}
+pre{background:#1a1613;padding:12px;border-radius:8px;overflow-x:auto;border:1px solid var(--line)}
+img{max-width:100%;border-radius:6px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+      padding:16px 18px;margin:10px 0}
+.card h3{margin:0 0 6px} .card p{margin:4px 0;color:var(--muted);font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.tag{display:inline-block;border:1px solid var(--line);background:#241f1b;border-radius:4px;
+     padding:1px 8px;margin:1px 3px;font-size:12px;font-weight:600;letter-spacing:0.02em}
+.tag.m{color:var(--meter);border-color:#2c4a2e}
+.lede{color:var(--muted);font-size:16.5px;max-width:68ch}
+.status{border-left:3px solid var(--copper);padding:12px 16px;background:var(--surface);
+        border-radius:0 8px 8px 0;margin:18px 0}
+.status p{margin:4px 0;font-size:15px}
+</style></head><body><a href="index.html" style="position:fixed;top:8px;right:12px;z-index:1000;
+background:#8a5a2e;color:#f4ead9;padding:6px 14px;border-radius:7px;text-decoration:none;
+font:600 13px system-ui;letter-spacing:0.04em;box-shadow:0 2px 8px #0009">HOME</a>
+<h1>SQ003 gas simmer controller — debug workspace</h1>
+<p class="lede">E.G.O./Tytronics SQ003-H from a Thermador Professional range: both XtraLow
+burners dead (no spark, no gas), second failure in ~2 years. Everything reverse-engineered
+so far lives here — interactive viewers, the netlist, schematic drafts, and the bench
+protocol. Every claim carries its evidence grade:</p>
+<p><span class="tag m">M meter-verified</span><span class="tag">H human, from photos</span>
+<span class="tag">V visually cataloged</span><span class="tag">CV computer vision</span>
+<span class="tag">DS datasheet / inference</span></p>
+<div class="status"><h3>Where the diagnosis stands</h3>
+<p>The failure signature (both XLO channels dead together, everything else fine, ~2-year
+repeat) is best matched by the <b>supply-collapse-under-load class</b> — dropper cap aging,
+reservoir ESR, or rectifier/zener drift. The decisive discriminator is bench test B4:
+watch the logic rail while the relay + a solenoid load kick in. Full reasoning in the
+<a href="design.html">design notes</a> and <a href="report.html">report</a>.</p></div>
+<h2>Interactive tools</h2>
+<div class="grid">
+<div class="card"><h3><a href="xray.html">X-ray viewer</a></h3>
+<p>Front of the board with the back-side copper as a toggleable layer (x to toggle,
+slider for opacity). Click a net to highlight it; hover shows net identity + evidence.</p></div>
+<div class="card"><h3><a href="annotator.html">Copper annotator</a></h3>
+<p>Draw along copper runs to assert connectivity; barriers to cut false bridges.
+Hit <b>💾 Save</b> when done — corrections flow straight into the netlist pipeline.</p></div>
+<div class="card"><h3><a href="solderlab.html">Solder lab</a></h3>
+<p>Hands-on: knobs for the solder/board edge decision on four board crops —
+see exactly where and why the edge is hard (WHY map, hover readout).</p></div>
+<div class="card"><h3><a href="netmap.html">Net map</a></h3>
+<p>The full current merged-net picture as one zoomable image — the review artifact.</p></div>
+</div>
+<h2>Documents</h2>
+<div class="grid">
+<div class="card"><h3><a href="schematic.html">Schematic draft</a></h3>
+<p>Five datasheet-style pages, line style = evidence grade.</p></div>
+<div class="card"><h3><a href="bom.html">Bill of materials</a></h3>
+<p>100 parts; 32 with values so far. The NEEDS-HUMAN list shows exactly what a
+magnifier at the board could still answer.</p></div>
+<div class="card"><h3><a href="bench.html">Bench guide + probe map</a></h3>
+<p>Printable protocol: 20 safe unpowered beeps (A1–A20), then the powered session
+(B1–B8) with safety rules. <b>This is the highest-value next step.</b></p></div>
+<div class="card"><h3><a href="report.html">Status report</a></h3>
+<p>Methodology, findings, errata, fault tree, red-team log.</p></div>
+<div class="card"><h3><a href="design.html">Design notes</a></h3>
+<p>The "how would E.G.O. have built this" exercise that fills the hidden-topology gaps,
+with 11 testable predictions and the PSU failure math.</p></div>
+</div>
+<div class="card"><h3>How to contribute findings</h3>
+<p>1. Do any subset of the bench guide (A-steps are all safe, board unpowered).<br>
+2. Record results in the <code>measurements.yaml</code> format shown at the end of the
+bench guide (or just write them in an email/text).<br>
+3. Draw any copper corrections in the annotator and hit 💾 Save.<br>
+Every measurement upgrades the netlist and regenerates the schematic automatically.</p></div>
+</body></html>

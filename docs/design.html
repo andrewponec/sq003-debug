@@ -1,0 +1,338 @@
+<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Design Notes (reference-design exercise)</title><style>
+:root{--bg:#131110;--surface:#1d1917;--line:#332c27;--text:#e8e2dc;--muted:#9a908a;
+      --copper:#c98a4b;--copper-dim:#8a5a2e;--meter:#6fbf73}
+body{font:16px/1.6 system-ui;background:var(--bg);color:var(--text);max-width:1080px;
+     margin:0 auto;padding:28px 22px 90px}
+h1{font-size:30px;font-weight:650;letter-spacing:-0.015em;line-height:1.2;color:var(--text);
+   text-wrap:balance;border-bottom:2px solid var(--copper-dim);padding-bottom:12px}
+h2{font-size:13px;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;
+   color:var(--copper);margin:34px 0 10px}
+h3{font-size:17px;font-weight:650;color:var(--text);line-height:1.3}
+a{color:var(--copper);text-decoration-color:var(--copper-dim)}
+a:hover{color:#e0a763} a:focus-visible{outline:2px solid var(--copper);outline-offset:2px}
+table{border-collapse:collapse;margin:14px 0;font-size:14px;display:block;overflow-x:auto;
+      font-variant-numeric:tabular-nums}
+th,td{border:1px solid var(--line);padding:5px 10px;text-align:left}
+th{background:var(--surface)} tr:nth-child(even){background:#181513}
+code{background:#241f1b;padding:1px 5px;border-radius:4px;font-size:14px}
+pre{background:#1a1613;padding:12px;border-radius:8px;overflow-x:auto;border:1px solid var(--line)}
+img{max-width:100%;border-radius:6px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+      padding:16px 18px;margin:10px 0}
+.card h3{margin:0 0 6px} .card p{margin:4px 0;color:var(--muted);font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.tag{display:inline-block;border:1px solid var(--line);background:#241f1b;border-radius:4px;
+     padding:1px 8px;margin:1px 3px;font-size:12px;font-weight:600;letter-spacing:0.02em}
+.tag.m{color:var(--meter);border-color:#2c4a2e}
+.lede{color:var(--muted);font-size:16.5px;max-width:68ch}
+.status{border-left:3px solid var(--copper);padding:12px 16px;background:var(--surface);
+        border-radius:0 8px 8px 0;margin:18px 0}
+.status p{margin:4px 0;font-size:15px}
+</style></head><body><a href="index.html" style="position:fixed;top:8px;right:12px;z-index:1000;
+background:#8a5a2e;color:#f4ead9;padding:6px 14px;border-radius:7px;text-decoration:none;
+font:600 13px system-ui;letter-spacing:0.04em;box-shadow:0 2px 8px #0009">HOME</a><h1>SQ003 Reference-Design Exercise — "if I had to build this in 1999"</h1>
+<p>2026-07-26 overnight session. Method: design the product forward from its known
+constraints and parts, then use the design to predict the unknown topology of the real
+board. Every prediction is tagged DPn and is beep-checkable; none is asserted as fact
+until measured. Provenance of this whole file: [DS/inference], informed by the netlist
+(incl. the owner's stroke session) where noted.</p>
+<h2>1. The design brief E.G.O. faced</h2>
+<p>Control two "XtraLow" simmer positions on a pro gas range: read two knob pots, cycle
+two gas solenoids with a very low duty flame, gate the external 6-channel spark module
+during XLO ignition windows, pass through three other burners' spark requests, all from
+120 VAC with a &lt;10 VA budget, one-sided phenolic board, 1999 parts, cost-driven.
+Available: ST62T20 (OTP, ADC, triac-rated port A), 4N35, 48 V SPDT relay, 2 tab
+triacs, 1 SCR + 2.2 µF/400 V film cap, ~32 R / ~20 D / ~21 C / 9 small transistors.</p>
+<h2>2. Reference design, block by block</h2>
+<h3>2.1 Power supply — transformerless, NEUTRAL-referenced (HYPOTHESIS, netlist-supported)</h3>
+<p>The owner's stroke session merged P5 (LINE-5V), P6 (NEUTRAL), and IC1 pin 1 (VDD) into
+one 566 mm² net [CV,H,M,V]. No direct P5↔P6 meter fact exists yet (BENCH_GUIDE A3/A3b
+are the test + falsifiers; rivals: line-referenced VDD, or a floating common reached
+only through high impedance). If it holds, this is the classic appliance topology:</p>
+<pre><code>NEUT (P6) ────────────┬──────────────────────── VDD  (&quot;logic high&quot; = neutral)
+                      │ ZD (5.1V shunt)  + reservoir C (25V can, + to VDD)
+LINE (P7) ──[C_drop]──┼──[R_inrush]──|&lt;|──┬───── VSS  (−5 V below neutral)
+                      │                   └── (2nd diode = return/clamp)
+                      └—[R32 4.7k 2W]──|&lt;|──[reservoir]── −48 V relay rail
+</code></pre>
+<ul>
+<li>Logic rail: series film-cap dropper off LINE, small inrush R, one rectifier +
+  one return diode (or 4-diode bridge), reservoir electrolytic, 5.1 V shunt zener.
+  CORRECTION (binding data): D12's anode sits DIRECTLY on LINE and ZD2 spans
+  VDD&lt;-&gt;N168 (not the VSS pour) — so the chain has two distinct sub-rail nodes
+  (N254 rectified, N168 shunt-regulated) and the dropper's position is still
+  open; the p1 schematic now draws the hidden chain as an unknown-order box.
+  VDD is the NEUT pour; VSS is a separate −5 V pour — which explains the big
+  unlabeled 243 mm² pour holding IC1 pin 20 [CV,H].</li>
+<li>Relay rail: the coil needs 48 V @ 7.5 mA only while an XLO position is active.
+  Cheapest: resistive dropper (R32, 2 W flameproof — 0.27 W actual, comfortable)
+  off the rectified line into a small reservoir; a TO-92 (one of TR1..TR9) sinks the
+  coil to VSS under MCU control. Freewheel diode across the coil.</li>
+<li>Budget check (pipeline/psu_model.py): worst-case active load ≈ 25 mA. A single
+  half-wave dropper would need ≥1.3 µF (implausible) → EITHER the rectifier is a
+  bridge (≥0.64 µF works) OR the relay branch is fed separately through R32
+  (then the C-dropper only carries ≤16 mA → ≥0.4 µF full-wave). The presence of a
+  dedicated fat 2 W resistor beside the relay strongly suggests the split branch.</li>
+<li>Aging math (dimensionless): rail collapses when fractional C loss exceeds
+  h/(1+h) for design headroom h — 23% loss kills a 30%-headroom design, and film
+  X2 caps on 24/7 line duty routinely lose 10–50% by self-healing. <strong>This mechanism CLASS (supply collapse under
+  load — dropper cap, reservoir ESR, or rectifier/zener drift are its members)
+  reproduces all three observed facts: both XLO channels dying together, everything
+  else still working, and a ~2-year repeat after a same-age refurb went in.</strong> Which
+  member it is (if any) is exactly what bench steps B4a-B4c discriminate. (The failure window where the MCU still runs but the
+  rail collapses under relay+gate load is wide.)</li>
+</ul>
+<h3>2.2 Pot interface</h3>
+<p>Rheostat mode: P5 (VDD potential) → knob pot → wiper P14/P15 → board-internal
+divider resistor to VSS → PB ADC pin. Ratiometric with VDD-VSS ✓ (ST62 ADC ref is
+the rails). Knob-off = spark-switch open is detected either as out-of-range ADC or
+via the switch line into the same network.</p>
+<h3>2.3 Request sensing (UNSEQ P1/P2/P3)</h3>
+<p>With logic already neutral-referenced, line-voltage switch signals need only a
+high-value flameproof series R + diode + clamp into a PB pin — no isolation needed.
+Predicts: D17/D18/D19 each in series with a large R (the R2/R7-class parts), summing
+or individually into PB inputs with zener/diode clamps.</p>
+<h3>2.4 Where the 4N35 actually goes</h3>
+<p>An opto in a fully line-referenced board is <em>not</em> needed for input sensing — it's
+needed where a signal must cross to a circuit referenced to the OTHER line pole or to
+the spark module's own domain. Best hypothesis: the MCU drives the 4N35 LED; the
+phototransistor (pins 4/5) closes the <strong>sequenced spark request</strong> loop to the external
+spark module (P8/P13 side), isolating the MCU domain from the spark module's
+flame-rectification-sensitive wiring. Alternative (weaker): flame/current sense input.</p>
+<h3>2.5 Solenoid + spark sequencing per XLO channel</h3>
+<ul>
+<li>T1/T2 = triacs (tab packages), gates via series R from PA pins 16–19 (datasheet
+  direct-drive). Solenoid drive is HALF-WAVE through the triac (fires one polarity):
+  120 Vrms half-wave ≈ 54 V average (≈85 V rms incl. DC; a DMM reads somewhere in
+   50–85 V depending on coupling) — CONSISTENT with the field-service note "board
+  outputs ~50 V AC to the solenoid," but only as a weak consistency check, not proof.
+  One PA pin per channel for gas, one per channel for spark-window = 4 PA pins ✓.</li>
+<li>The steering-diode rows beside T1/T2 (D15/D13/D10/D9 and D16/D14/D5/D6) split each
+  channel's triac between the solenoid path (P9→…→P10/P11 RET) and the
+  sequenced-spark path (P8/P13), per the handoff's multi-pad chain observation.</li>
+<li>RET topology (Q4): OPEN. An earlier P10≡P11 common-return claim was withdrawn
+  2026-07-28 — owner audit showed three disjoint copper islands; the union was a
+  terminal-sampling artifact (fixed: majority-comp-only unions). Bench A12 decides.</li>
+<li>SCR1 + 2.2 µF/400 V + D1/D2: capacitor-discharge kick. Most plausible role:
+  guarantee a crisp solenoid pull-in (charge the film cap off LINE, dump through the
+  SCR into the valve coil at the moment of ignition), since a half-wave-fed solenoid
+  alone can chatter at pull-in. Alternative: a sequencing pulse into the spark module.
+  The 400 V film cap + SCR is overkill for logic, right-sized for a coil kick.</li>
+</ul>
+<h3>2.6 Relay (K1)</h3>
+<p>SPDT gating LINE onto SW LINE (P4) — the master enable for the XLO subsystem
+(protects against a stuck triac by de-energizing the whole branch when idle, and
+gives the "all other burners keep working" isolation). Driven by a TO-92 from a PA
+or PB pin to VSS.</p>
+<h3>2.7 MCU support</h3>
+<p>RES1 ceramic resonator on pins 3/4 with C10/C11 as its load caps (Q5 prediction);
+R+C on /RESET pin 7 (10 k + 10 nF class — one of the 103K100s); VPP pin 6 strapped
+to VSS; unused PB pins strapped (netlist already shows IC1.15 on VDD and
+IC1.12≡IC1.13 paired [H]); 100 nF-class decoupling at the IC corner; ZD4 (measured
+2.5 V, K→VDD) most plausibly a threshold reference for a comparator-style sense
+(brown-out helper on RESET, or valve-current threshold) — its anode net is the tell.</p>
+<h2>3. BOM reconciliation (predicted vs observed)</h2>
+<table>
+<thead>
+<tr>
+<th>Block</th>
+<th>Predicted parts</th>
+<th>Fits observed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PSU logic rail</td>
+<td>1 X2 dropper + bleed R + inrush R + 2–4 D + 1–2 electrolytics + ZD</td>
+<td>C7/C12, R-near-line, D11/D12(+2?), two 25 V cans, ZD2 ✓</td>
+</tr>
+<tr>
+<td>Relay rail + driver</td>
+<td>R32 2W + D + small cap + TO-92 + freewheel D</td>
+<td>R32 ✓, one TR, D near relay (D18/D19 hidden under it!) ✓</td>
+</tr>
+<tr>
+<td>Pots</td>
+<td>2 divider R</td>
+<td>R near IC corner ✓</td>
+</tr>
+<tr>
+<td>UNSEQ sense ×3</td>
+<td>3 D + 3–6 R + clamps</td>
+<td>D17–D19 cluster ✓</td>
+</tr>
+<tr>
+<td>Opto path</td>
+<td>LED R + base/pullup R</td>
+<td>R around IC3 ✓</td>
+</tr>
+<tr>
+<td>Triacs ×2</td>
+<td>2 gate R + 2 RC snubbers</td>
+<td>R18/R22/R19/R23 + 103K100 caps near T1/T2 ✓</td>
+</tr>
+<tr>
+<td>Steering</td>
+<td>8 diodes</td>
+<td>two 4-diode rows ✓ (D5/6/9/10/13/14/15/16)</td>
+</tr>
+<tr>
+<td>CD kick</td>
+<td>SCR + 2.2 µF/400 V + D1/D2 + gate R/C</td>
+<td>✓ exact parts present</td>
+</tr>
+<tr>
+<td>MCU support</td>
+<td>resonator + 2 load C + reset RC + decoupling + straps</td>
+<td>RES1, C10/C11, 103K100, C19 ✓</td>
+</tr>
+</tbody>
+</table>
+<p>Nothing observed on the board is left <em>unexplainable</em> by this architecture, and
+nothing the architecture demands is missing from the board — the design closes.</p>
+<h2>4. Testable predictions (owner beep list, all unpowered)</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Prediction</th>
+<th>One-beep test</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DP1</td>
+<td>P5 ≡ P6 copper (VDD = NEUT)</td>
+<td>P5 ↔ P6</td>
+</tr>
+<tr>
+<td>DP2</td>
+<td>ZD2 spans the rails, K on VDD</td>
+<td>ZD2.K ↔ P6, ZD2.A ↔ IC1.20</td>
+</tr>
+<tr>
+<td>DP3</td>
+<td>25 V cans span rails, + to VDD</td>
+<td>can+ ↔ P6, can− ↔ IC1.20</td>
+</tr>
+<tr>
+<td>DP4</td>
+<td>C10/C11 = resonator load caps</td>
+<td>each ↔ RES1 legs / IC1.3, IC1.4</td>
+</tr>
+<tr>
+<td>DP5</td>
+<td>reset RC on pin 7</td>
+<td>10 nF cap ↔ IC1.7; R from IC1.7 ↔ VDD</td>
+</tr>
+<tr>
+<td>DP6</td>
+<td>4N35 LED driven by MCU side; transistor side exits toward P8/P13</td>
+<td>IC3.1/2 ↔ (R→PA/PB pin); IC3.4/5 ↔ SEQ chain</td>
+</tr>
+<tr>
+<td>DP7</td>
+<td>T1/T2 gates via R to PA 16–19</td>
+<td>gate pin ↔ R ↔ IC1.16..19</td>
+</tr>
+<tr>
+<td>DP8</td>
+<td>common RET rail returns to NEUT (± sense R)</td>
+<td>P10 ↔ P6 (or small R between)</td>
+</tr>
+<tr>
+<td>DP9</td>
+<td>VPP strap</td>
+<td>IC1.6 ↔ IC1.20</td>
+</tr>
+<tr>
+<td>DP10</td>
+<td>R32 feeds relay coil from rectified line; coil low side to a TO-92 collector</td>
+<td>R32 ↔ D11/D12 node; coil ↔ TR collector</td>
+</tr>
+<tr>
+<td>DP11</td>
+<td>pin 5 NMI tied inactive or to zero-cross sense</td>
+<td>IC1.5 ↔ VDD/VSS or R-to-line divider</td>
+</tr>
+</tbody>
+</table>
+<p>Zero-cross note: triac firing and "sequenced" windows imply the MCU knows line
+phase; expect a high-R divider from LINE into a PB pin or NMI (DP11's second branch).</p>
+<h2>5. FMEA — ranked failure modes vs the observed signature</h2>
+<table>
+<thead>
+<tr>
+<th>Rank</th>
+<th>Mode</th>
+<th>Mechanism</th>
+<th>Matches symptom?</th>
+<th>Bench signature</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Dropper-cap capacitance loss</td>
+<td>X2 self-healing on 24/7 line</td>
+<td>✅ both-XLO dead, rest fine, ~2 yr repeat, refurb re-ages</td>
+<td>VDD-VSS ok idle, collapses when relay+valve load applied</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Reservoir electrolytic ESR (25 V cans, 1999)</td>
+<td>ripple → brown-out cycling</td>
+<td>✅ same signature, faster onset when hot</td>
+<td>large 120 Hz ripple on VDD-VSS; reset pin sawtooth</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Relay path (coil rail R32 branch / contacts / driver TR)</td>
+<td>resistive dropper thermal stress; contact wear</td>
+<td>✅ kills both channels (master enable)</td>
+<td>no 48 V across coil when commanded; no SW LINE</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Solder joint / link chain (esp. P5-chain, P10/P11 rework zone)</td>
+<td>thermal cycling on single-sided board</td>
+<td>✅ plausible; explains prior board's "repair"</td>
+<td>flex test; beeps across suspect joints</td>
+</tr>
+<tr>
+<td>5</td>
+<td>4N35 CTR degradation</td>
+<td>LED ages, CTR halves over decades</td>
+<td>Partial — kills spark gating; solenoid path unclear</td>
+<td>LED Vf ok but no collector action powered</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Triac/SCR failure</td>
+<td>gate wear-out is rare; usually fails shorted not open</td>
+<td>❌ one channel, not both; short = valve stuck OPEN (dangerous, not observed)</td>
+<td>junction test both polarities</td>
+</tr>
+<tr>
+<td>7</td>
+<td>MCU/OTP failure</td>
+<td>rare; OTP retention &gt;&gt;25 yr typical</td>
+<td>weak — possible but last</td>
+<td>osc dead / no PA activity with good rails+reset</td>
+</tr>
+</tbody>
+</table>
+<p>The FMEA's top two both live in the PSU branch and are exactly what the powered
+ripple-under-load test discriminates — reinforcing the REPORT §5 ordering.</p>
+<h2>6. What changed in my thinking</h2>
+<ul>
+<li>The board being <strong>neutral-referenced with a negative VSS</strong> (if DP1 confirms) means
+  every "5 V" probe point is still line-referenced — the bench safety rules in
+  REPORT §5 stay mandatory, and scope grounds remain forbidden.</li>
+<li>The relay's role as <strong>master XLO enable</strong> (SW LINE) raises the relay <em>branch</em> (rail,
+  driver, contacts — not the coil) back up the list; the coil measuring healthy says
+  little (codex finding #4 was right).</li>
+<li>The 2.2 µF/SCR block being a <strong>valve pull-in kicker</strong> would put it in series with
+  the solenoid event chain — a failed kicker = valves never pull in even with the MCU
+  commanding correctly. That's testable: watch P9–P10 voltage at the commanded moment.</li>
+</ul></body></html>

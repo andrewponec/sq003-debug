@@ -1,0 +1,23 @@
+{
+  // SQ003 debug workspace — same deploy pattern as antora-factory2-gis:
+  // GitHub repo connected via Cloudflare Workers Builds Git integration.
+  "name": "sq003-debug",
+  "main": "worker.js",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "directory": "./docs",
+    "binding": "ASSETS",
+    // run the worker on EVERY request (edge asset cache otherwise serves
+    // HTML before the worker runs — stale pages after deploys; the worker
+    // stamps no-store on text/html)
+    "run_worker_first": true
+  },
+  "kv_namespaces": [
+    {
+      "binding": "INBOX",
+      // Create in dashboard (Storage & Databases -> KV -> "sq003-inbox")
+      // or `npx wrangler kv namespace create INBOX`, then paste the id:
+      "id": "f3811c30aae24b87b39fde5a532fe48f"
+    }
+  ]
+}
